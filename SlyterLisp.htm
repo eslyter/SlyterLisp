@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en-US"><!-- Eric Slyter --><!-- CS3160 - Programming Languages --><!-- Final Project --><!-- SlyterLisp: A Lisp to JavaScript Interpreter --><!-- Due: 12-2-2016 --><head>
+<meta http-equiv="content-type" content="text/html; charset=windows-1252">
+<title>SlyterLisp</title>
+<style>
+textarea, input, fieldset, legend {border: 2px solid black;}
+input    {width: 50%; background-color: navajowhite;}
+fieldset {margin: 2em; background-color: LightBlue; padding: 1em;}
+legend {background-color: Silver; style="font-size:14pt"; padding: 1em;}
+</style>
+ </head>
+
+<body bgcolor="lightsteelblue">
+<h1>SlyterLisp: Lisp to Javascript Interpreter</h1>
+
+<fieldset>
+<legend><b>Input Lisp Expression</b></legend>
+<div align="center">
+<input value="(and (&lt;= 3 3) (number? 'a))" name="input" style="font-size:14pt;height:6em;width:75em;" type="textbox"><br>
+</div></fieldset>
+
+
+
+<div align="center">
+<button style="font-size:14pt;height:75px;width:250px;" onclick="Eval()"><b>Evaluate</b></button><br>
+</div>
+
+<fieldset>
+<legend><b>The Result Is:</b></legend>
+<div align="center">
+<input value="#false" name="output" style="font-size:14pt;height:6em;width:75em;" type="textbox">
+</div></fieldset>
+
+
+<script>
+
+function generate_tokens(program) {
+	// function to split a string into an array of tokens
+	token_array = program.replace(/\(/g, ' ( ').replace(/\)/g, ' ) ').trim().split(/\s+/);
+	return token_array;
+}
+
+function parse(program) {
+	// wrapper function to call generate_tokens on a program input as a string, then call generate_AST on the array
+	// of tokens to get an AST
+	return generate_AST(generate_tokens(program));
+}
+
+function generate_AST(tokens) {
+	// function to generate an AST based on an array of tokens
+	
+	// if there are no tokens, generate an error
+	if (tokens.length == 0) {
+		console.log("unexpected EOF while reading");
+	}
+	
+	//get the first token
+	token = tokens.shift();
+	
+	// if the token is '(', we know we are entering a list 
+	if (token == '(') {
+		var list = []; // create a new list or sublist
+		
+		// loop through the array of tokens and push each token onto the new list until we reach a ')' to mark the sublist end
+		while (tokens[0] != ')') { 
+			list.push(generate_AST(tokens));
+		}
+		tokens.shift();
+		return list; // return the resulting list
+	}
+	else if (token == ')') { // if the first token is ')', the list was entered improperly
+		console.log("Unexpected )");	
+	}
+	else {
+		return atomize(token); // call atomize on each token that represents an atom
+	}
+}
+
+function atomize(token) {
+	// function to atomize the tokens.  If it is not a number, just return the token, otherwise
+	// try to first parse the token as a float, and then try to parse the token as an integer
+	if (isNaN(token) == true) {
+		return token;
+	}
+	else {
+		try {
+			return parseFloat(token);
+		}
+		catch(token){
+			return parseInt(token);
+		}
+	}
+}
+
+var EvalCompare = function(x) {
+// function to perform comparison operations
+	
+	if (typeof(x) == "object") {
+		var op = x[0];
+	
+		// perform the correct binary operation on the operands based on the value of op
+		if (op == "<") {return x[1] < x[2]; }
+		else if (op == ">") {return x[1] > x[2]; }
+		else if (op == "<=") {return x[1] < x[2]; }
+		else if (op == ">=") {return x[1] > x[2]; }
+		else if (op == "=") {return x[1] == x[2]; }
+		else if (op == "/=") {return x[1] != x[2]; }
+		else if (op == "max") {return Math.max(x[1],x[2]);}
+		else if (op == "min") {return Math.min(x[1],x[2]);}
+	}
+	else if (typeof(x) == "number") {return x;}	
+}
+
+var EvalType = function(x) {
+// function to Evaluate types
+	if (typeof(x) == "object") {
+		var op = x[0];
+	
+		// check the type based on the operator
+		if (op == "symbol?") {
+			if(typeof(x[1])=="string" && x[1] != "'" && x[1] != "#true" && x[1] != "#false"){return true;}
+			else {return false;}
+		}
+		else if (op == "number?") {
+			if(typeof(x[1]) == "number"){return true;}
+			else {return false;}
+		}
+		else if (op == "boolean?") {
+			if(x[1] == "#true" || x[1] == true || x[1] == "#false" || x[1] == false){return true;}
+			else {return false;}
+		}
+		else if (op == "null?") {
+			if(x[1] == "'" && x[2] != null){return true;}
+			else {return false;}
+		}
+		else if (op == "cons?") { // have to call EvalList to construct the list first.  
+			var returnList = [];
+			var result = EvalList(x[1],returnList); //If EvalList returns an object, we know we have a list
+			if(typeof(result) == "object"){return true;}
+			else {return false;}
+		}
+		else if (op == "eq?") { // compares x[1] with x[2] from the x array.  
+			//If both are objects, we already know the eq? operator should fail, even if both lists are exactly the same.
+			if(typeof(x[1]) == "object" && typeof(x[2]) == "object") {return false;} 
+			else {return x[1]== x[2];}
+		}
+	}
+	else if (typeof(x) == "number") {return x;}	
+}
+
+
+var EvalCond = function(x) {
+// function to check "if" statements
+	
+	if (typeof(x) == "object") {
+		var op = x[0];
+		if (op == "if") {
+			var condition = x[1];
+			if (condition[0].indexOf("?") > -1) {
+				var result = EvalType(x[1]);
+			}
+			else {
+				var result = EvalCompare(x[1]);
+			}
+			if (result == true) {return x[2];}
+			else {return x[3];}
+		}
+	}
+	else if (typeof(x) == "number") {return x;}	
+}
+
+var EvalLog = function(x) {
+	if (typeof(x) == "object") {
+		var op = x[0];
+		var op1 = x[1];
+		var op2 = x[2];
+		
+		if (typeof(op1) == "object") {
+			if (op1[0].indexOf("?") > -1) {
+				var result1 = EvalType(op1);
+			}
+			else {
+				var result1 = EvalCompare(op1);
+			}
+		}
+		else {
+			var result1 = op1;
+		}
+		if (typeof(op2) == "object") {
+			if (op2[0].indexOf("?") > -1) {
+				var result2 = EvalType(op2);
+			}
+			else {
+				var result2 = EvalCompare(op2);
+			}
+		}
+		else {
+			var result2 = op2;
+		}
+		if (op == "and") {return result1&&result2;}
+		else if (op == "or") {return result1||result2;}
+		else {return !result1;}
+	}
+	else if (typeof(x) == "number") {return x;}	
+}
+
+
+var EvalArith = function(x)
+{
+
+	if (typeof(x) == "object") {
+		var op = x[0];
+
+		// evaluating "+" Arithmetic operations
+		if (op == "+") {
+			var sum = 0; // start a new sum
+			var sumlist = x; // assign x to the sumlist array
+			sumlist.shift(); // throw out the operator from the list
+			
+			for (var i = 0; i < sumlist.length; i++) { // loop through the array
+		        sum += EvalArith(sumlist[i]); // call EvalArith on each element of the array and sum the results
+		    }
+			return sum; // return the final sum
+		}
+		else if (op == "*") {
+			var mult = 1; // start a new product
+			var multlist = x; // assign x to the multlist array
+			multlist.shift(); // throw out the operator from the list		
+			for (var j = 0; j < multlist.length; j++) {  // loop through the array
+		        mult = mult*EvalArith(multlist[j]); // call EvalArith on each element of the array and multiply the results
+		    }
+			return mult; // return the final product
+		}
+		else if (op == "-") {
+			var sub = 0; // start a new difference
+			var sublist = x; // assign x to the sublist array
+			sublist.shift(); // throw out the operator from the list		
+			for (var i = 0; i < sublist.length; i++) { // loop through the array
+				if (i == 0) { sub = sublist[0];} else { // the first number in the difference should be positive 
+		        sub -= EvalArith(sublist[i]); // call EvalArith on each element of the array and subtract the results
+				}
+		    }
+			return sub; // return the final difference
+		}
+		
+		else if (op == "/") {
+			var div = 1;
+			var divlist = x;
+			divlist.shift(); // throw out the operator from the list		
+			for (var i = 0; i < divlist.length; i++) {
+				if (i == 0) { div = divlist[0];} else { // the first number should be the dividend 
+		        div /= EvalArith(divlist[i]); // call EvalArith on each element of the array and divide the results
+				}
+		    }
+			return div; // return the result
+		}
+	}	
+	else if (typeof(x) == "number") {return x;}
+}
+
+function car(a) { return a[0] ;} // basic function to return the first element of the list
+function cdr(a) { return a.slice(1) ;} // basic function to return the rest of the list
+
+var GenList = function(x, returnList)
+// function to generate an array representation of a list when the "list" keyword is used
+{
+	if (typeof(x) == "object") {	
+		if (x[0] == "'") { // if the first element of the array is a single quote, shift the quote off the array
+	   		x.shift();
+	   		return x;
+		}
+		if (x[0] == "list") { // if the first element of the array is the keyword "list", shift it off the list and recurse
+		    x.shift();
+		    return GenList(x,returnList);
+		}
+		else if (typeof(x[0]) == "object") { //if the first element is an array object, push it on the returnList
+			var L = [];
+			returnList.push(GenList(x[0],L));
+			x.shift(); // shift x[0] off the array
+			return GenList(x,returnList); // call GenList again on the remaining array elements
+		}
+		else if (typeof(x[0]) == "number" || typeof(x[0]) == "string"){ // check to see if the first element is an atom
+			returnList.push(x[0]); // if the first element is an atom, push it onto the list
+			x.shift(); // shift x[0] off the array
+			return GenList(x, returnList); //call GenList again on the remaining array elements
+		}
+		else {return returnList;} // otherwise just return the list
+	}
+	else if (typeof(x) == "number") {return x;}
+}
+
+var EvalList = function(x, returnList)
+{
+	// function to construct a list using cons and/or deconstruct a list using car/cdr
+	if (typeof(x) == "object") {	
+	
+		if (x[0] == "cons") { // if the first element of the array is cons, push the second element on the list
+			returnList.push(x[1]);
+			
+			// decide what to do with the rest of the list
+			if (x[2] == "'") { // if the third element is a single quote, ignore the single quote
+				return EvalList(x[3],returnList); // call EvalList on the fourth element of the array
+			}
+			return EvalList(x[2],returnList); // otherwise just call EvalList on the third element of the array
+		}
+		else if(x[0] == "car") // check to see if the first element is "car"
+		{
+			if(x[1] == "'") // if the second element is a single quote
+			{
+				return car(x[2]); // call the basic car function on the third element
+			}
+			return car(EvalList(x[1],returnList)); //otherwise, return car on the result of EvalList on the second element
+		}
+		else if(x[0] == "cdr") // check to see if the first element is "cdr"
+		{
+			if(x[1] == "'") // if the second element is a single quote
+				{
+				return cdr(x[2]); //call the basic cdr function on the third element
+				}
+			return cdr(EvalList(x[1],returnList)); //otherwise, return cdr on the result of EvalList on the second element
+		}
+		
+		else {
+			return returnList;
+		}	
+	}
+	
+	else if (typeof(x) == "number") {return x;}
+}
+
+var Evaluate = function(x)
+// Wrapper function to call the correct Eval function based on the first element of the AST array (represented by x)
+{
+	if (typeof(x) == "object") {	
+	
+		if (x[0] == "cons" || x[0] == "car" || x[0] == "cdr") { // call EvalList if the first element of x is "cons", "car", "cdr"
+			var L = [];
+			return EvalList(x,L);
+		}
+		else if (x[0] == "list") { // call GenList if the first element of x is "list"
+			var L = [];
+			return GenList(x, L);
+		}
+		else if (x[0] == "+" || x[0] == "-" || x[0] == "*" || x[0] == "/") { // call EvalArith if the first element of x is an Arithmetic operator
+			return EvalArith(x);
+		}
+		// call EvalCompare if the first element of x is a comparison operator
+		else if (x[0] == "<" || x[0] == "<=" || x[0] == ">" || x[0] == ">=" || x[0] == "max" || x[0] == "min" || x[0] == "/=" || x[0] == "=") {
+			return EvalCompare(x);
+		}
+		// call EvalType if the first element of x is a Type Check Operator
+		else if (x[0] == "symbol?" || x[0] == "number?" || x[0] =="boolean?" || x[0] == "null?" || x[0] == "cons?" || x[0] == "eq?") {
+			return EvalType(x);
+		}
+		// call EvalCond if the first element of x is "if"
+		else if(x[0] == "if") {
+			return EvalCond(x);
+		}
+		// call EvalLog if the first element of x is a logical operator
+		else if(x[0] == "and" || x[0] == "or" || x[0] == "not") {
+			return EvalLog(x);
+		}
+		// otherwise the operation / function is not supported 
+		else {console.log("Invalid Operation");}
+	}
+	
+	else if (typeof(x) == "number") {return x;}
+}
+
+var printListLoop = function(x) {
+	// function to take an array or nested array and return a string that represents the Lisp list format
+	if (x.length == 0) {
+		return '\'()';
+	}
+	else {
+		var str = '(list ';
+		for (var i = 0; i < x.length; i++) {
+				if (typeof(x[i]) == "object") { 
+					ary = x[i];
+					str += '(list ';
+					for (var j = 0; j < ary.length; j++) {
+					    if (j == ary.length-1) {
+					    	str += ary[j];
+					    }
+					    else {
+					    str += ary[j];
+					    str += ' ';
+					    }
+					}
+					if (i == x.length - 1) {
+						str += ')';
+					}
+					else {str += ') ';}
+				}
+				else {
+					if (i == x.length-1) {
+				    	str += x[i];
+				    }
+				    else {
+				    	str += x[i];
+				        str += ' ';
+				    }
+				}			
+		}
+		str += ')';
+		return str;
+	}
+}
+
+function Eval() {
+
+var cmd = document.getElementsByName('input')[0].value;
+var result = Evaluate(parse(cmd));
+	if (typeof(result) == "number") {
+    		  result;
+    	  }
+    	  else if (typeof(result) == "boolean") {
+		result = "#"+result;    		  
+    	  }
+    	  else if (typeof(result) == "object") {
+    	  		var result = printListLoop(result);	
+    	  }  	  	
+    	  else
+    	  {
+    		result;
+	  }
+out = result;
+document.getElementsByName('output')[0].value= out;
+
+}
+
+
+</script>
+
+ 
+</body></html>
